@@ -1,0 +1,35 @@
+# Project 4 - Process Scheduling
+# Kenan Krijestorac
+# 18 March 2021
+# Completed 
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SOURCES
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ISSUES
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+HOW TO RUN
+
+1. Type 'make' in the terminal
+2. Run as './oss' followed by the options and name of the log file; if not options are
+   specified, then defaults will be provided
+ 
+   e.g. ./oss -s 4 -l output.log
+
+3. Type 'make clean' to remove executables, object files, and log file
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+VERSION CONTROL
+
+- repository is set to private; will make public 03/31/2021
+- will most likely forget to commit/push
+
+- https://github.com/gandhiboi/CS4760-Project-4
+
+
