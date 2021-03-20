@@ -1,3 +1,5 @@
+//source: https://www.geeksforgeeks.org/queue-set-1introduction-and-array-implementation/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -67,12 +69,12 @@ void allocateMessageQueues() {
 		exit(EXIT_FAILURE);
 	}
 
-	if((childMsgQID = msgget(childMsgKey, S_IRUSR | S_IWUSR | IPC_CREAT | IPC_EXCL)) == -1) {
+	if((childMsgQID = msgget(childMsgKey, 0666 | IPC_CREAT)) == -1) {
 		perror("shared.c: error: child message queue allocation failed");
 		exit(EXIT_FAILURE);
 	}
 
-	if((parentMsgQID = msgget(parentMsgKey, S_IRUSR | S_IWUSR | IPC_CREAT | IPC_EXCL)) == -1) {
+	if((parentMsgQID = msgget(parentMsgKey, 0666 | IPC_CREAT)) == -1) {
 		perror("shared.c: error: parent message queue allocation failed");
 		exit(EXIT_FAILURE);
 	}
@@ -93,4 +95,16 @@ void deleteMessageQueues() {
 			exit(EXIT_FAILURE);
 		}
 	}
+}
+
+SharedMemory* shmemPtr() {
+	return shmem;
+}
+
+int childMsgQptr() {
+	return childMsgQID;
+}
+
+int parentMsgQptr() {
+	return parentMsgQID;
 }

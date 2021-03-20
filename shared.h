@@ -13,7 +13,7 @@
 //Structure for Message Queue
 typedef struct {
 	long mtype;
-	char mtext[MSG_QUEUE_BUFF];
+	char mtext[100];
 } Message;
 
 //Structure for Simulated Clock
@@ -51,9 +51,8 @@ void deleteSharedMemory();
 void allocateMessageQueues();
 void deleteMessageQueues();
 
-
-
-
-
+SharedMemory* shmemPtr();
+int childMsgQptr();
+int parentMsgQptr();
 
 #endif
