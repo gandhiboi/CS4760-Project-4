@@ -27,7 +27,8 @@ typedef struct {
 //Structure for Process Control Block
 typedef struct {
 	pid_t userPID;
-	int indexedPID;
+	int localPID;
+	int processTypeFlag;				//if 0, then cpu bound; if 1, then i/o bound
 	SimulatedClock cpuTime;			//time spent on cpu
 	SimulatedClock waitTime;			//time spent waiting for something to happen
 	SimulatedClock queueTime;			//time spent in queue
