@@ -4,26 +4,40 @@
 #include <sys/msg.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
+#include <limits.h>
 
 #include "shared.h"
 #include "queue.h"
 
 #define MAX_USER_PROCESS 18
+#define TIME_QUANTUM 10
 
 SharedMemory *shared = NULL;
 Message msg;
+FILE * fp;
 
 Queue * blockedQ;
 Queue * readyQ;
 
-const int maxTimeBetweenNewProcsNS = 100000;
+int totalProcess = 100;
 const int maxTimeBetweenNewProcsSecs = 1;
+const int maxTimeBetweenNewProcsNS = 100000;
 
 static int pMsgQID;
 static int cMsgQID;
+int locPID = 0;
 
 void allocation();
+void spawnUser(int);
+void init();
 void usage();
+void scheduler();
+
+void timeToSchedule(SimulatedClock*);
+void incrementSimClock(SimulatedClock*, int);
+
+int findEmptyPCB();
 
 int main(int argc, char* argv[]) {
 
@@ -57,40 +71,123 @@ int main(int argc, char* argv[]) {
 				exit(EXIT_FAILURE);
 		}
 	}
+	
+	fp = fopen(lVar, "w");
+	
+	if(fp == NULL) {
+		perror("oss.c: error: failed to open log file");
+	}
 
-	printf("s: %d\n", s);
-	printf("lVar: %s\n", lVar);
+	srand(time(NULL));
 
 	allocation();
-
-	shared->simTime.sec = 4;
-
-	msg.mtype = 1;
+	printf("Message Queues and Shared Memory are set\n");
 	
-	//printf("parentMsgQID: %d\n", pMsgQID);
+	init();
+	printf("Process Control Block variables have been initialized\n");
 	
-	strcpy(msg.mtext, "hello 1 from oss.c");
-
-	if(msgsnd(pMsgQID, &msg, sizeof(Message), IPC_NOWAIT) == -1) {
-		perror("msgsnd failed");
-	}
-		
-	if(fork() == 0) {
-		execl("./user", "user", (char*)NULL);
-	}
-
-	//printf("childMsgQID: %d\n", cMsgQID);
-	fflush(stdout);	
-	msgrcv(cMsgQID, &msg, sizeof(Message), 1, 0);
-	printf("from user: %s\n", msg.mtext);
+	printf("Simulated process scheduling has begun\n");
+	scheduler();
+	printf("Simulated process scheduling has ended\n");
 
 	sleep(2);
 
 	releaseSharedMemory();
 	deleteMessageQueues();
+	printf("Message Queues and Shared Memory have been released and deleted\n");
 
         return EXIT_SUCCESS;
 
+}
+
+void scheduler() {
+
+	shared->simTime.sec = 0;
+	shared->simTime.ns = 0;
+
+	SimulatedClock totalCPU = {0,0};
+	SimulatedClock totalSystem = {0,0};
+	SimulatedClock schedulingTime = {0,0};
+	SimulatedClock totalBlocked = {0,0};
+	
+	//incrementSimClock(&(shared->simTime));
+
+	//while(1) {
+	
+		timeToSchedule(&(shared->simTime));
+		printf("simClock SEC: %d\nsimClock NANO: %d\n", shared->simTime.sec, shared->simTime.ns);
+	
+		int position = findEmptyPCB();
+	
+		shared->table[position].localPID = locPID;
+
+		spawnUser(position);
+	
+		sleep(1);
+
+		msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
+	
+		if(strcmp(msg.mtext, "COMPLETE") == 0) {
+
+			printf("%s\n", msg.mtext);
+		
+			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] USED ALL TIME QUANTUM\n", shared->table[position].localPID, shared->table[position].userPID);
+				
+		}
+		/*
+		else if(strcmp(msg.mtext, "BLOCKED") == 0) {
+			printf("%s\n", msg.mtext);
+		
+			msgrcv(cMsgQID, &msg, sizeof(Message), 1, 0);
+			printf("%s\n", msg.mtext);
+		
+			sleep(2);
+		
+			releaseSharedMemory();
+			deleteMessageQueues();
+		
+			return EXIT_SUCCESS;	
+		}
+		*/
+		else if(strcmp(msg.mtext, "TERMINATE") == 0) {
+			printf("%s\n", msg.mtext);
+		
+			msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
+			printf("percentage: %s\n", msg.mtext);
+			
+			int temp = atoi(msg.mtext);
+			
+			int adj =  (int) ((double) 10000000 * ((double) temp / (double) 100));
+			
+			printf("adj: %d\n", adj);
+			
+			incrementSimClock(&(shared->simTime), adj);
+			
+			//printf("TERMINATE: simClock SEC: %d\tsimClock NANO: %d\n", shared->simTime.sec, shared->simTime.ns);
+		
+			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] TERMINATED STATE\n \t [TIME FINISHED: [%d:%d]]\n", shared->table[position].localPID, shared->table[position].userPID, shared->simTime.sec, shared->simTime.ns);
+		}
+	//}
+}
+
+void timeToSchedule(SimulatedClock* schedInc) {
+	int lower = 100;
+	int upper = 10000;
+
+	int rng = (rand() % (upper - lower + 1)) + lower;	
+	//printf("timeToSchedule RNG: %d\n", rng);
+	
+	incrementSimClock(schedInc, rng);	
+}
+
+void incrementSimClock(SimulatedClock* timeStruct, int increment) {
+	int nanoSec = timeStruct->ns + increment;
+	
+	while(nanoSec >= 1000000000) {
+		nanoSec -= 1000000000;
+		(timeStruct->sec)++;
+	}
+	timeStruct->ns = nanoSec;
 }
 
 void allocation() {
@@ -105,6 +202,46 @@ void allocation() {
 	blockedQ = createQueue(MAX_USER_PROCESS);
 	readyQ = createQueue(MAX_USER_PROCESS);
 	
+}
+
+void init() {
+	int i;
+	for(i = 0; i < MAX_USER_PROCESS; i++) {
+		shared->table[i].userPID = -1;
+		shared->table[i].localPID = -1;
+		//printf("oss: %d: %d\n", i, shared->table[i].userPID);
+	}
+}
+
+void spawnUser(int index) {	
+	pid_t pid = fork();
+	
+	if(pid == -1) {
+		perror("oss.c: error: failed to fork");\
+		exit(EXIT_FAILURE);
+	}
+	
+	if(pid == 0) {
+		int length = snprintf(NULL, 0, "%d", index);
+		char* xx = (char*)malloc(length + 1);
+		snprintf(xx, length + 1, "%d", index);
+	
+		execl("./user", xx, (char*)NULL);
+		
+		free(xx);
+		xx = NULL;
+	}
+}
+
+int findEmptyPCB() {
+	int i;
+	for(i = 0; i < MAX_USER_PROCESS; i++) {
+		if(shared->table[i].localPID == -1) {
+			return i;
+		}
+	}
+	
+	return -1;
 }
 
 void usage() {
