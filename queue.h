@@ -17,5 +17,6 @@ void enqueue(Queue*, unsigned int);
 unsigned int dequeue(Queue*);
 unsigned int front(Queue*);
 unsigned int rear(Queue*);
+unsigned int sizeQ(Queue*);
 
 #endif

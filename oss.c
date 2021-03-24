@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <time.h>
 #include <limits.h>
+#include <wait.h>
+#include <sys/types.h>
 
 #include "shared.h"
 #include "queue.h"
@@ -33,11 +35,14 @@ void spawnUser(int);
 void init();
 void usage();
 void scheduler();
+void signalHandler(int);
 
 void timeToSchedule(SimulatedClock*);
 void incrementSimClock(SimulatedClock*, int);
+void timeToCreateProcess(SimulatedClock*, int, int);
 
 int findEmptyPCB();
+int findIndex(int);
 
 int main(int argc, char* argv[]) {
 
@@ -80,6 +85,8 @@ int main(int argc, char* argv[]) {
 
 	srand(time(NULL));
 
+	signal(SIGINT, signalHandler);
+
 	allocation();
 	printf("Message Queues and Shared Memory are set\n");
 	
@@ -90,8 +97,9 @@ int main(int argc, char* argv[]) {
 	scheduler();
 	printf("Simulated process scheduling has ended\n");
 
-	sleep(2);
+	//sleep(2);
 
+	fclose(fp);
 	releaseSharedMemory();
 	deleteMessageQueues();
 	printf("Message Queues and Shared Memory have been released and deleted\n");
@@ -102,72 +110,174 @@ int main(int argc, char* argv[]) {
 
 void scheduler() {
 
+	int activeProcesses = 0;
+	int status;
+	pid_t pid;	
+	
 	shared->simTime.sec = 0;
 	shared->simTime.ns = 0;
 
-	SimulatedClock totalCPU = {0,0};
-	SimulatedClock totalSystem = {0,0};
-	SimulatedClock schedulingTime = {0,0};
-	SimulatedClock totalBlocked = {0,0};
-	
-	//incrementSimClock(&(shared->simTime));
+	SimulatedClock totalCPU = {0,0};				//total time spent on CPU
+	SimulatedClock totalSystem = {0,0};				//total time in the system
+	SimulatedClock idleTime = {0,0};				//total time spent idle
+	SimulatedClock totalBlocked = {0,0};				//time spent being blocked
 
-	//while(1) {
+	while(1) {
 	
-		timeToSchedule(&(shared->simTime));
+		if(locPID > 4) {
+			break;
+		}
+	
+		int procIncSecs = (rand() % (maxTimeBetweenNewProcsSecs + 1));
+		int procIncNS = (rand() % (maxTimeBetweenNewProcsNS +1));
+		timeToCreateProcess(&(shared->simTime), procIncNS, procIncSecs);				//time to create a process
+		printf("procIncSEC: %d\tprocIncNANO: %d\n", procIncSecs, procIncNS);
+		
+		timeToSchedule(&(shared->simTime));								//time required to put in ready queue
 		printf("simClock SEC: %d\nsimClock NANO: %d\n", shared->simTime.sec, shared->simTime.ns);
 	
 		int position = findEmptyPCB();
 	
 		shared->table[position].localPID = locPID;
+		
+		//timeToSchedule(&(shared->simTime));
+		fprintf(fp, "OSS: GENERATING PROCESS [LOCAL PID: %d] PUT IN READY QUEUE [TIME ENTERED READY QUEUE: [%d:%d]]\n", shared->table[position].localPID,
+			shared->simTime.sec, shared->simTime.ns);
 
-		spawnUser(position);
+		if(position != -1) {
+			spawnUser(position);
+			activeProcesses++;
+		}
+		
+		enqueue(readyQ, locPID);
+		
 	
-		sleep(1);
+		//sleep(1);
+		int q = 0;
+		while(q < 10000000) q++;
 
 		msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
 	
 		if(strcmp(msg.mtext, "COMPLETE") == 0) {
+	
+			dequeue(readyQ);
+			//activeProcesses--;
 
 			printf("%s\n", msg.mtext);
+			
+			msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
+			printf("used all: %s\n", msg.mtext);
+			
+			int temp = atoi(msg.mtext);
+			int adj = (int) ((double) 10000000 * ((double) temp / (double) 100));
+			
+			incrementSimClock(&(shared->simTime), adj);
+			
+			shared->table[position].leaveTime.sec = shared->simTime.sec;
+			shared->table[position].leaveTime.sec = shared->simTime.ns;
+	
 		
-			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] USED ALL TIME QUANTUM\n", shared->table[position].localPID, shared->table[position].userPID);
+			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] USED ENTIRE TIMESLICE [10 ms]\n\t[TIME FINISHED: [%d:%d]] REMOVED FROM READY QUEUE\n",
+				shared->table[position].localPID, shared->table[position].userPID, shared->simTime.sec, shared->simTime.ns);
+				
+			//shared->table[position].localPID = -1;
 				
 		}
-		/*
 		else if(strcmp(msg.mtext, "BLOCKED") == 0) {
+		
+			dequeue(readyQ);
+			enqueue(blockedQ, locPID);
+			//activeProcesses--;
 			printf("%s\n", msg.mtext);
 		
-			msgrcv(cMsgQID, &msg, sizeof(Message), 1, 0);
+			msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
 			printf("%s\n", msg.mtext);
+			
+			int temp = atoi(msg.mtext);
+			int adj = (int) ((double) 10000000 * ((double) temp / (double) 100));
+			
+			incrementSimClock(&(shared->simTime), adj);
 		
-			sleep(2);
-		
-			releaseSharedMemory();
-			deleteMessageQueues();
-		
-			return EXIT_SUCCESS;	
+			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] PROCESS BLOCKED [(ADDVAR)% USED]\n \t [TIME ENTERED BLOCKED QUEUE: [%d:%d]]\n \t [UNBLOCK AT TIME: (ADDVAR:ADDVAR)]\n",
+				shared->table[position].localPID, shared->table[position].userPID, shared->simTime.sec, shared->simTime.ns);		
 		}
-		*/
-		else if(strcmp(msg.mtext, "TERMINATE") == 0) {
+		else if(strcmp(msg.mtext, "TERMINATE") == 0) {	
+			dequeue(readyQ);
+			//activeProcesses--;
 			printf("%s\n", msg.mtext);
 		
 			msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
 			printf("percentage: %s\n", msg.mtext);
 			
 			int temp = atoi(msg.mtext);
-			
 			int adj =  (int) ((double) 10000000 * ((double) temp / (double) 100));
 			
 			printf("adj: %d\n", adj);
 			
 			incrementSimClock(&(shared->simTime), adj);
 			
+			shared->table[position].leaveTime.sec = shared->simTime.sec;
+			shared->table[position].leaveTime.sec = shared->simTime.ns;
+			
 			//printf("TERMINATE: simClock SEC: %d\tsimClock NANO: %d\n", shared->simTime.sec, shared->simTime.ns);
 		
-			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] TERMINATED STATE\n \t [TIME FINISHED: [%d:%d]]\n", shared->table[position].localPID, shared->table[position].userPID, shared->simTime.sec, shared->simTime.ns);
+			fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] TERMINATED STATE\n\t[USED %d% OF TIMESLICE] [TIME FINISHED: [%d:%d]] REMOVED FROM READY QUEUE\n", 
+				shared->table[position].localPID, shared->table[position].userPID, temp, shared->simTime.sec, shared->simTime.ns);
+				
+			//shared->table[position].localPID = -1;
 		}
-	//}
+		
+		if(isEmpty(blockedQ) == 0) {
+			incrementSimClock(&(shared->simTime), 5000000);
+			
+			int j;
+			for(j = 0; j < sizeQ(blockedQ); j++) {
+				int blockedLocalPID = dequeue(blockedQ);
+				int PIDinPCB = findIndex(blockedLocalPID);
+				if(msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[PIDinPCB].userPID, IPC_NOWAIT) > -1) {
+					if(strcmp(msg.mtext, "UNBLOCKED") == 0) {
+						printf("\n\n\n\n%s\n\n\n\n\n", msg.mtext);
+						enqueue(readyQ, shared->table[PIDinPCB].userPID);
+					}
+				}
+				else {
+					enqueue(blockedQ, PIDinPCB);
+				}
+			}
+		}
+		
+		if(isEmpty(readyQ) == 0) {
+		
+			int resumeLocalPID = dequeue(readyQ);
+			int rPIDinPCB = findIndex(resumeLocalPID);
+			
+		
+		}
+		
+		pid = waitpid(-1, &status, WNOHANG);
+		//source stack overflow: https://stackoverflow.com/questions/28840215/when-and-why-should-you-use-wnohang-with-waitpid
+		if(pid > 0) {
+			if(WIFEXITED(status)) {
+				if(WEXITSTATUS(status) == 0 || WEXITSTATUS(status) == 2) {
+					activeProcesses--;
+					if(position != -1) {
+						shared->table[position].localPID = -1;
+					}
+				}
+			}
+		}
+/*		
+		if(locPID > 10){
+			break;
+		}
+*/		
+		if(totalProcess < 0) {
+			break;
+		}
+		locPID++;
+		totalProcess--;
+		
+	} // main loop
 }
 
 void timeToSchedule(SimulatedClock* schedInc) {
@@ -188,6 +298,18 @@ void incrementSimClock(SimulatedClock* timeStruct, int increment) {
 		(timeStruct->sec)++;
 	}
 	timeStruct->ns = nanoSec;
+}
+
+void timeToCreateProcess(SimulatedClock* procSched, int nanoSec, int segundos) {
+	procSched->sec += segundos;
+	
+	int nSec = procSched->ns + nanoSec;
+	while(nSec >= 1000000000) {
+		nSec -= 1000000000;
+		(procSched->sec)++;
+	}
+	procSched->ns = nSec;
+
 }
 
 void allocation() {
@@ -244,6 +366,16 @@ int findEmptyPCB() {
 	return -1;
 }
 
+int findIndex(int index) {
+	int i = 0;
+	for(i = 0; i < MAX_USER_PROCESS; i++) {
+		if(shared->table[i].localPID == index) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 void usage() {
 	printf("======================================================================\n");
         printf("\t\t\t\tUSAGE\n");
@@ -257,4 +389,24 @@ void usage() {
         printf("-s t            :       Indicate how many maximum seconds before the system terminates\n");
         printf("-l f            :       Specify a particular name for the log file\n");
         printf("======================================================================\n");
+}
+
+void signalHandler(int signal) {
+
+	printf("oss.c: terminating: signalHandler\n");
+	
+	int i;
+	for(i = 0; i < MAX_USER_PROCESS; i++) {
+		if(shared->table[i].userPID != -1) {
+			kill(shared->table[i].userPID, SIGTERM);
+		}
+	}
+	
+	fclose(fp);
+	
+	releaseSharedMemory();
+	deleteMessageQueues();
+
+	kill(getpid(), SIGTERM);	
+
 }

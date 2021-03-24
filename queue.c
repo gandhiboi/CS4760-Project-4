@@ -66,6 +66,7 @@ unsigned int front(Queue* queue) {
 	return queue->array[queue->front];
 
 }
+
 unsigned int rear(Queue* queue) {
 
 	if(isEmpty(queue)) {
@@ -74,4 +75,8 @@ unsigned int rear(Queue* queue) {
 
 	return queue->array[queue->rear];
 
+}
+
+unsigned int sizeQ(Queue* queue) {
+	return queue->size;
 }
