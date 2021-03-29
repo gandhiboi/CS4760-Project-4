@@ -12,8 +12,8 @@
 
 #define PERCENT_BLOCKED 20
 #define PERCENT_USE_ALL 90
-#define CHANCE_CPU 60
 #define BUFFER_SIZE 10
+#define CHANCE_CPU 70
 
 SharedMemory * shared = NULL;
 static int pMsgQID;
@@ -24,12 +24,16 @@ SimulatedClock unblocked;
 
 int pid;
 
+static int help;
+
 void allocation();
 void simProcessComplete();
 void simProcessBlock();
 void simProcessTerminate();
 
 void timeUntilUnblocked(SimulatedClock*, int, int);
+SimulatedClock findBlockedTime(SimulatedClock*);
+void incrementSimClock(SimulatedClock*, int);
 
 int main(int argc, char* argv[]) {
 
@@ -38,56 +42,56 @@ int main(int argc, char* argv[]) {
 	
 	pid = getpid();
 	
-	int index = atoi(argv[0]);
-	shared->table[index].arrivalTime.sec = shared->simTime.sec;
-	shared->table[index].arrivalTime.sec = shared->simTime.ns;
+	int indexer = atoi(argv[0]);
+	help = indexer;
+	shared->table[indexer].arrivalTime.sec = shared->simTime.sec;
+	shared->table[indexer].arrivalTime.sec = shared->simTime.ns;
 	
-	printf("user: index: %d\n", index);
-	
+	//printf("user: index: %d\n", indexer);	
+			
 	if(rand() % 100 <= CHANCE_CPU) {
-		shared->table[index].processTypeFlag = 0;			//sets flag for process to be CPU bound
+		shared->table[indexer].processTypeFlag = "CPU";			//sets flag for process to be CPU bound
+		printf("PID: %d\nProcess Type Flag: %s\n", pid, shared->table[indexer].processTypeFlag);
+		shared->cpuCount += 1;
 	}
 	else {
-		shared->table[index].processTypeFlag = 1;			//sets flag for process to be IO bound
-	}
-	
-	printf("user: processTypeFlag: %d\n", shared->table[index].processTypeFlag);
-	
-	shared->table[index].userPID = getpid();
+		shared->table[indexer].processTypeFlag = "IO";			//sets flag for process to be IO bound
+		printf("Process Type Flag: %s\n", shared->table[indexer].processTypeFlag);
+		shared->ioCount += 1;
+	}	
+	shared->table[indexer].userPID = getpid();
 	
 	int rp = (rand() % 100);
 	
+	while(1) {
 	
-		if(shared->table[index].processTypeFlag == 0) {
+		msgrcv(pMsgQID, &msg, sizeof(Message), pid, 0);
+	
+		if(strcmp(shared->table[indexer].processTypeFlag, "CPU") == 0) {
 			if(rp <= PERCENT_BLOCKED) {
-				printf("user.c: %d\n", rp);
 				simProcessBlock();
 			}
 			else if(rp <= PERCENT_USE_ALL) {
-				printf("user.c: %d\n", rp);
 				simProcessComplete();
 			}
 			else {
-				printf("user.c: %d\n", rp);
 				simProcessTerminate();
 			}
 		}
-		else if(shared->table[index].processTypeFlag == 1) {
+		else if(strcmp(shared->table[indexer].processTypeFlag, "IO") == 0) {
 			if(rp <= PERCENT_BLOCKED + 5) {
-				printf("increased chance to block\n");
-				printf("user.c: %d\n", rp);
 				simProcessBlock();
 			}
 			else if(rp <= PERCENT_USE_ALL) {
-				printf("user.c: %d\n", rp);
 				simProcessComplete();
 			}
 			else {
-				printf("user.c: %d\n", rp);
 				simProcessTerminate();
 			}
 		}
 
+	}
+	
 	return EXIT_SUCCESS;
 
 }
@@ -104,7 +108,6 @@ void allocation() {
 }
 
 void simProcessComplete() {
-
 	msg.mtype = pid;
 	strcpy(msg.mtext, "COMPLETE");
 	if(msgsnd(cMsgQID, &msg, sizeof(Message), 0)) {
@@ -123,22 +126,30 @@ void simProcessComplete() {
 		exit(EXIT_FAILURE);
 	}
 	
+	int adj =  (int) ((double) 10000000 * ((double) usedAll / (double) 100));
+	
+	if(strcmp(shared->table[help].processTypeFlag, "CPU") == 0) {
+		incrementSimClock(&(shared->totalCPU), adj);
+	}
+	else {
+		incrementSimClock(&(shared->totalIO), adj);
+	}
+	
 	exit(EXIT_SUCCESS);
 }
 
 void simProcessBlock() {
-
 	srand(getpid());
 	
 	unblocked.sec = shared->simTime.sec;
 	unblocked.ns = shared->simTime.ns;
 	
-	printf("user before adding time: unblocked.sec: %d\tunblocked.ns: %d\n", unblocked.sec, unblocked.ns);
+	//printf("user before adding time: unblocked.sec: %d\tunblocked.ns: %d\n", unblocked.sec, unblocked.ns);
 	
 	msg.mtype = pid;
 	strcpy(msg.mtext, "BLOCKED");
 	if(msgsnd(cMsgQID, &msg, sizeof(Message), IPC_NOWAIT)) {
-		perror("user.c: error: simProcessBlock msgsnd failed");
+		perror("user.c: error: 1simProcessBlock msgsnd failed");
 		exit(EXIT_FAILURE);
 	}
 
@@ -148,20 +159,31 @@ void simProcessBlock() {
 	
 	msg.mtype = pid;	
 	strcpy(msg.mtext, temp);
-	if(msgsnd(cMsgQID, &msg, sizeof(Message), IPC_NOWAIT)) {
-		perror("user.c: error: simProcessBlock msgsnd failed");
+	if(msgsnd(cMsgQID, &msg, sizeof(Message), 0)) {
+		perror("user.c: error: 2simProcessBlock msgsnd failed");
 		exit(EXIT_FAILURE);
 	}
 
 	int rSec = (rand() % 5) + 1;
 	int sNs = (rand() % 1000) + 1;
-	
 	timeUntilUnblocked(&unblocked, sNs, rSec);
 	
-	printf("user: unblocked.sec: %d\tunblocked.ns: %d\n", unblocked.sec, unblocked.ns);
+	int adj =  (int) ((double) 10000000 * ((double) rng / (double) 100));
+	
+	if(strcmp(shared->table[help].processTypeFlag, "CPU") == 0) {
+		incrementSimClock(&(shared->totalCPU), adj);
+		shared->totalBlockedCPU.sec += rSec;
+		incrementSimClock(&(shared->totalBlockedCPU), sNs);
+	}
+	else {
+		incrementSimClock(&(shared->totalIO), adj);
+		shared->totalBlockedIO.sec += rSec;
+		incrementSimClock(&(shared->totalBlockedIO), sNs);
+	}
+	
+	//printf("user: unblocked.sec: %d\tunblocked.ns: %d\n", unblocked.sec, unblocked.ns);
 	
 	while(1) {
-		//printf("a");
 		if(shared->simTime.sec >= unblocked.sec && shared->simTime.ns >= unblocked.ns) {
 			break;
 		}
@@ -169,8 +191,8 @@ void simProcessBlock() {
 	
 	msg.mtype = pid;
 	strcpy(msg.mtext, "UNBLOCKED");
-	if(msgsnd(cMsgQID, &msg, sizeof(Message), IPC_NOWAIT)) {
-		perror("user.c: error: simProcessBlock msgsnd failed");
+	if(msgsnd(cMsgQID, &msg, sizeof(Message), 0)) {
+		perror("user.c: error: 3simProcessBlock msgsnd failed");
 		exit(EXIT_FAILURE);
 	}
 
@@ -197,7 +219,16 @@ void simProcessTerminate() {
 		exit(EXIT_FAILURE);
 	}
 	
-	exit(2);
+	int adj =  (int) ((double) 10000000 * ((double) rng / (double) 100));
+	
+	if(strcmp(shared->table[help].processTypeFlag, "CPU") == 0) {
+		incrementSimClock(&(shared->totalCPU), adj);
+	}
+	else {
+		incrementSimClock(&(shared->totalIO), adj);
+	}
+	
+	exit(EXIT_SUCCESS);
 }
 
 void timeUntilUnblocked(SimulatedClock* unblockMe, int nanoSec, int segundos) {
@@ -212,5 +243,22 @@ void timeUntilUnblocked(SimulatedClock* unblockMe, int nanoSec, int segundos) {
 
 }
 
+void incrementSimClock(SimulatedClock* timeStruct, int increment) {
+	int nanoSec = timeStruct->ns + increment;
+	
+	while(nanoSec >= 1000000000) {
+		nanoSec -= 1000000000;
+		(timeStruct->sec)++;
+	}
+	timeStruct->ns = nanoSec;
+}
 
+SimulatedClock findBlockedTime(SimulatedClock* unblockTimeStruct) {
+	SimulatedClock foo;
+	
+	foo.sec = unblockTimeStruct->sec - shared->simTime.sec;
+	foo.ns = unblockTimeStruct->ns - shared->simTime.ns;
+
+	return foo;
+}
 

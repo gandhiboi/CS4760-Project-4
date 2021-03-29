@@ -28,21 +28,28 @@ typedef struct {
 typedef struct {
 	pid_t userPID;
 	int localPID;
-	int processTypeFlag;				//if 0, then cpu bound; if 1, then i/o bound
-	SimulatedClock cpuTime;			//time spent on cpu
-	SimulatedClock waitTime;			//time spent waiting for something to happen
-	SimulatedClock queueTime;			//time spent in queue
-	SimulatedClock blockTime;			//time it spent in blocked queue
-	SimulatedClock enterTime;			//time process began calculations
-	SimulatedClock leaveTime;			//time process left after completing calculations
+	int state;
+	int blockedLocalPID;
+	char* processTypeFlag;				//cpu or io bound
+	//SimulatedClock cpuTime;			//time spent on cpu
+	//SimulatedClock waitTime;			//time spent waiting for something to happen
+	//SimulatedClock blockTime;			//time it spent in blocked queue
+	//SimulatedClock totalTime;			//total time spent in system
+	SimulatedClock leaveTime;			//time process left the system
 	SimulatedClock arrivalTime;			//initial arrival time
-	SimulatedClock completeTime;			//time process completed
 } PCB;
 
 //Structure for shared memory for PCB and simulated clock
 typedef struct {
 	PCB table[MAX_USER_PROCESS];
-	SimulatedClock simTime;
+	int cpuCount;
+	int ioCount;
+	SimulatedClock simTime;				//running simulated clock
+	SimulatedClock totalCPU;				//total time spent on CPU
+	SimulatedClock totalIO;
+	//SimulatedClock totalSystem;				//total time in the system
+	SimulatedClock totalBlockedCPU;			//time spent being blocked
+	SimulatedClock totalBlockedIO;
 } SharedMemory;
 
 void allocateSharedMemory();
