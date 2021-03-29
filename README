@@ -1,23 +1,34 @@
 # Project 4 - Process Scheduling
 # Kenan Krijestorac
-# 18 March 2021
-# Completed 
+# Started: 18 March 2021
+# Completed: 29 March 2021
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 SOURCES
 
+- https://stackoverflow.com/questions/28840215/when-and-why-should-you-use-wnohang-with-waitpid
+- https://www.geeksforgeeks.org/program-round-robin-scheduling-set-1/
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ISSUES
 
+- could not figure out how to wait for remaining blocked processes to finish if they spawn before the time is up; so
+  I included a cleanup function to kill the remaining blocked processes; only happens with processes that spawn after 90
+- could not figure out why for some reason the local pid and pid after the process is unblocked is shown as zero for both
+- sometimes the program will stop and wait for a message and terminates due to the timer; rarely happens but can just
+  rerun the program and it will work
+- included a while loop because the child would terminate too quickly and message would not be received by oss
+- had to increase the default timer to 5 seconds because it would not finish fast enough due to the loop mentioned in the
+  comment above
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 HOW TO RUN
 
 1. Type 'make' in the terminal
-2. Run as './oss' followed by the options and name of the log file; if not options are
-   specified, then defaults will be provided
+2. Run as './oss' followed by the options and name of the log file; if no options are
+   specified, then defaults will be provided [-s 5] [-l output.log] are defaults
  
    e.g. ./oss -s 4 -l output.log
 
@@ -32,4 +43,62 @@ VERSION CONTROL
 
 - https://github.com/gandhiboi/CS4760-Project-4
 
+Commits on Mar 29, 2021
+as good as it's gonna get; couple small issues; possibly final commit
 
+@gandhiboi
+gandhiboi committed 11 minutes ago
+ 
+Commits on Mar 24, 2021
+signal handler; inc clock for states; blocked state work in progress/reQing blocked process/multiple processes; still miserable
+@gandhiboi
+gandhiboi committed 5 days ago
+ 
+Commits on Mar 23, 2021
+added func to inc clock; writing to file; rand for state/chance for io/cpu; i am miserable :)
+@gandhiboi
+gandhiboi committed 6 days ago
+ 
+Commits on Mar 22, 2021
+determining percentages for states; and the values to increment clock
+
+@gandhiboi
+gandhiboi committed 7 days ago
+ 
+Commits on Mar 20, 2021
+both message queues/two way comms are working
+
+@gandhiboi
+gandhiboi committed 9 days ago
+ 
+Commits on Mar 19, 2021
+implemented a queue
+
+@gandhiboi
+gandhiboi committed 10 days ago
+ 
+Commits on Mar 18, 2021
+set up shared memory and msg qs; working
+
+@gandhiboi
+gandhiboi committed 10 days ago
+ 
+made sure everything compiles
+
+@gandhiboi
+gandhiboi committed 11 days ago
+ 
+updated makefile for multiple files
+
+@gandhiboi
+gandhiboi committed 11 days ago
+ 
+updated readme
+
+@gandhiboi
+gandhiboi committed 11 days ago
+ 
+initial commit
+
+@gandhiboi
+gandhiboi committed 11 days ago
