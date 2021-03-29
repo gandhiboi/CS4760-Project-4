@@ -55,12 +55,12 @@ int main(int argc, char* argv[]) {
 	//determines if process is IO bound or CPU bound and sets flag in PCB
 	if(rand() % 100 <= CHANCE_CPU) {
 		shared->table[indexer].processTypeFlag = "CPU";			//sets flag for process to be CPU bound
-		printf("PID: %d\nProcess Type Flag: %s\n", pid, shared->table[indexer].processTypeFlag);
+		//printf("PID: %d\nProcess Type Flag: %s\n", pid, shared->table[indexer].processTypeFlag);
 		shared->cpuCount += 1;
 	}
 	else {
 		shared->table[indexer].processTypeFlag = "IO";			//sets flag for process to be IO bound
-		printf("Process Type Flag: %s\n", shared->table[indexer].processTypeFlag);
+		//printf("Process Type Flag: %s\n", shared->table[indexer].processTypeFlag);
 		shared->ioCount += 1;
 	}
 	

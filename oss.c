@@ -181,9 +181,10 @@ void scheduler() {
 		timeToCreateProcess(&(shared->simTime), procIncNS, procIncSecs);				//time to create a process; randomnly generated according to specifications
 		//timeToCreateProcess(&idle, procIncNS, procIncSecs);						//reused function to increment idle time; didn't use cause the number seemed way off
 		
+		//finds empty PCB and sets position to the empty spot in the PCB
 		int position = findEmptyPCB();
 		shared->table[position].localPID = locPID;
-		printf("Local PID: %d\n", locPID);
+		//printf("Local PID: %d\n", locPID);
 		
 		//writes to file process is being generated
 		fprintf(fp, "OSS: GENERATING PROCESS [LOCAL PID: %d] [TIME GENERATED: %d:%d]\n", shared->table[position].localPID, shared->simTime.sec, shared->simTime.ns);
@@ -287,7 +288,7 @@ void scheduler() {
 				
 				incrementSimClock(&(shared->simTime), adj);
 		
-				fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] PROCESS BLOCKED [%d% USED]\n \t [TIME ENTERED BLOCKED QUEUE: [%d:%d]]\n \t [UNBLOCK AT TIME: (ADDVAR:ADDVAR)]\n",
+				fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] PROCESS BLOCKED [%d% USED]\n \t [TIME ENTERED BLOCKED QUEUE: [%d:%d]]\n",
 				shared->table[position].localPID, shared->table[position].userPID, temp, shared->simTime.sec, shared->simTime.ns);
 
 			}
