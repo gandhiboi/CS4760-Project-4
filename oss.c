@@ -161,13 +161,16 @@ int main(int argc, char* argv[]) {
 
 }
 
+//round robin queue and responsible for spawning processes and outputting to log file
 void scheduler() {
 
+	//random variables to be able to control the spawning of users/processes
 	int cap = 0;
 	int status;	
 	int left = 0;
 	int processing = 0;
 	
+	//sets system sim clock to {0,0}
 	shared->simTime.sec = 0;
 	shared->simTime.ns = 0;
 
@@ -175,19 +178,20 @@ void scheduler() {
 	
 		int procIncSecs = (rand() % (maxTimeBetweenNewProcsSecs + 1));
 		int procIncNS = (rand() % (maxTimeBetweenNewProcsNS +1));
-		timeToCreateProcess(&(shared->simTime), procIncNS, procIncSecs);				//time to create a process
-		//timeToCreateProcess(&idle, procIncNS, procIncSecs);						//reused function to increment idle time
+		timeToCreateProcess(&(shared->simTime), procIncNS, procIncSecs);				//time to create a process; randomnly generated according to specifications
+		//timeToCreateProcess(&idle, procIncNS, procIncSecs);						//reused function to increment idle time; didn't use cause the number seemed way off
 		
 		int position = findEmptyPCB();
 		shared->table[position].localPID = locPID;
 		printf("Local PID: %d\n", locPID);
 		
+		//writes to file process is being generated
 		fprintf(fp, "OSS: GENERATING PROCESS [LOCAL PID: %d] [TIME GENERATED: %d:%d]\n", shared->table[position].localPID, shared->simTime.sec, shared->simTime.ns);
-
 		
 		timeToSchedule(&(shared->simTime));								//time required to put in ready queue
 		//printf("simClock SEC: %d\nsimClock NANO: %d\n", shared->simTime.sec, shared->simTime.ns);
 	
+		//outputs to file that process is being scheduled
 		fprintf(fp, "OSS: SCHEDULING PROCESS [LOCAL PID: %d] PLACED IN READY QUEUE [TIME ENTERED READY QUEUE: %d:%d]\n", shared->table[position].localPID, shared->simTime.sec, shared->simTime.ns);
 	
 		pid_t pid = fork();
@@ -197,12 +201,14 @@ void scheduler() {
 			exit(EXIT_FAILURE);
 		}
 		
+		//spawns the users/processes
 		if(pid == 0) {
 			spawnUser(position, pid);
 			cap++;
 			exit(EXIT_SUCCESS);
 		}
 		
+		//if there's no open spot in the PCB killed the spawned process
 		if(position == -1) {
 			kill(pid, SIGTERM);
 		}
@@ -211,13 +217,12 @@ void scheduler() {
 		
 		fprintf(fp, "OSS: DISPATCHING [LOCAL PID: %d] [PID: %d] [TIME DISPATCHED: %d:%d]\n",locPID, pid, shared->simTime.sec, shared->simTime.ns);
 		
+		
 		if(isEmpty(readyQ) == 0) {
 			processing = 1;
-		
-			//int resumeLocalPID = front(readyQ);
-			//int rPIDinPCB = findIndex(resumeLocalPID);
 				
 			//source stack overflow: https://stackoverflow.com/questions/28840215/when-and-why-should-you-use-wnohang-with-waitpid
+			//resets the state for the PCB if it returns 0; only for terminated and completed processes
 			int waitPID = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED);
 			if(waitPID > 0) {
 				if(WIFEXITED(status)) {
@@ -230,7 +235,8 @@ void scheduler() {
 					}
 				}
 			}
-		
+			
+			//sends message to dispatch the process
 			msg.mtype = pid;
 			strcpy(msg.mtext, "DISPATCH");
 			msgsnd(pMsgQID, &msg, sizeof(Message), 0);
@@ -239,7 +245,8 @@ void scheduler() {
 			while(q < 19909990) q++;
 
 			msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[position].userPID, 0);
-	
+		
+			//outputs relative information to log file regarding completed users and increments sim clock accordingly
 			if(strcmp(msg.mtext, "COMPLETE") == 0) {
 				processing = 0;
 				dequeue(readyQ);
@@ -310,23 +317,26 @@ void scheduler() {
 		
 			if(isEmpty(blockedQ) == 0) {
 
+				//increment idle struct and sim clock since program is doing nothing at the moment
 				if(processing == 0) {
 					incrementSimClock(&(shared->simTime), 500000);
 					incrementSimClock(&idle, 500000);
 				}
 				
+				//used to check if processes are ready to be unblocked, if not requeues them in blocked Q
 				int j;
 				for(j = 0; j < sizeQ(blockedQ); j++) {
 					int blockedLocalPID = dequeue(blockedQ);
-					int PIDinPCB = findIndex(blockedLocalPID);
-					if(msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[PIDinPCB].userPID, IPC_NOWAIT) > -1) {
+					int PIDinPCB = findIndex(blockedLocalPID);			//finds the position in the PCB to perform the check to wake process
+					if(msgrcv(cMsgQID, &msg, sizeof(Message), shared->table[PIDinPCB].userPID, IPC_NOWAIT) > -1) {				//performs the check if process is ready to be unblocked
 						if(strcmp(msg.mtext, "UNBLOCKED") == 0) {
 							fprintf(fp, "OSS: [LOCAL PID: %d] [PID: %d] UNBLOCKED \n\t[TIME FINISHED: [%d:%d]] REMOVED FROM READY QUEUE\n", 
 							shared->table[PIDinPCB].blockedLocalPID, shared->table[PIDinPCB].userPID, shared->simTime.sec, shared->simTime.ns);
 							left++;
-							int mvQ = timeToMoveQueues(&(shared->simTime));
+							int mvQ = timeToMoveQueues(&(shared->simTime));							//increments the clock for moving queues
 							enqueue(readyQ, shared->table[PIDinPCB].userPID);
 						
+							//dispatches the unblocked process
 							strcpy(msg.mtext, "DISPATCH");
 							fprintf(fp, "OSS: DISPATCHING UNBLOCKED PROCESS [LOCAL PID: %d] [PID: %d] [TIME TO SWITCH QUEUES: [%d NS]]\n",
 								shared->table[PIDinPCB].localPID, front(readyQ), mvQ);
@@ -335,14 +345,14 @@ void scheduler() {
 						}
 					}
 					else {
-						enqueue(blockedQ, PIDinPCB);
+						enqueue(blockedQ, PIDinPCB);					//requeues processes that are not ready to be unblocked yet
 					}
 				}
 			}
 		
 		}
 		
-		
+		//logic control to exit loop
 		if(totalProcess < 0 || locPID == 100) {
 			break;
 		} 
@@ -353,6 +363,7 @@ void scheduler() {
 	
 }
 
+//increments sim clock for scheduling processes
 void timeToSchedule(SimulatedClock* schedInc) {
 	int lower = 100;
 	int upper = 10000;
@@ -363,6 +374,7 @@ void timeToSchedule(SimulatedClock* schedInc) {
 	incrementSimClock(schedInc, rng);	
 }
 
+//increments system sim clock and other clocks (idle, etc)
 void incrementSimClock(SimulatedClock* timeStruct, int increment) {
 	int nanoSec = timeStruct->ns + increment;
 	
@@ -373,6 +385,7 @@ void incrementSimClock(SimulatedClock* timeStruct, int increment) {
 	timeStruct->ns = nanoSec;
 }
 
+//increments sim clock for creating processes based on specifications
 void timeToCreateProcess(SimulatedClock* procSched, int nanoSec, int segundos) {
 	procSched->sec += segundos;
 	
@@ -385,6 +398,7 @@ void timeToCreateProcess(SimulatedClock* procSched, int nanoSec, int segundos) {
 
 }
 
+//increments simulated clock for switching between queues
 int timeToMoveQueues(SimulatedClock* blockToReady) {
 	int lower = 500;
 	int upper = 50000;
@@ -396,6 +410,7 @@ int timeToMoveQueues(SimulatedClock* blockToReady) {
 	return rng;
 }
 
+//used to calculate the average times for IO/CPU
 void averageTime(SimulatedClock * timeStruct) {
 	long avg = (((long)(timeStruct->sec) * (long)1000000000) + (long)(timeStruct->ns))/100;
 	SimulatedClock convert = {0,0};
@@ -404,6 +419,7 @@ void averageTime(SimulatedClock * timeStruct) {
 	timeStruct->ns = convert.ns;
 }
 
+//used to calculate the average times - convers the secs to ns
 void biggerAverageTime(SimulatedClock * timeStruct, long increment) {
 	long nanoSec = timeStruct->ns + increment;
 	
@@ -415,6 +431,7 @@ void biggerAverageTime(SimulatedClock * timeStruct, long increment) {
 
 }
 
+//allocates message queues and shared memory
 void allocation() {
 	allocateSharedMemory();
 	allocateMessageQueues();
@@ -429,6 +446,7 @@ void allocation() {
 	
 }
 
+//initializes the states of PCB to keep track of empty locations and spawn limits
 void init() {
 	int i;
 	for(i = 0; i < MAX_USER_PROCESS; i++) {
@@ -436,6 +454,7 @@ void init() {
 	}
 }
 
+//generates the next user[0-17]
 void spawnUser(int index, int PID) {	
 
 		int length = snprintf(NULL, 0, "%d", index);
@@ -448,6 +467,7 @@ void spawnUser(int index, int PID) {
 		xx = NULL;
 }
 
+//finds empty PCB for the next spawned process
 int findEmptyPCB() {
 	int i;
 	for(i = 0; i < MAX_USER_PROCESS; i++) {
@@ -459,6 +479,7 @@ int findEmptyPCB() {
 	return -1;
 }
 
+//finds the position in PCB
 int findIndex(int index) {
 	int i = 0;
 	for(i = 0; i < MAX_USER_PROCESS; i++) {
@@ -469,6 +490,7 @@ int findIndex(int index) {
 	return -1;
 }
 
+//signal handler for ctrl+c and timer
 void signalHandler(int signal) {
 
 	if(signal == SIGINT) {
@@ -492,6 +514,7 @@ void signalHandler(int signal) {
 	exit(EXIT_SUCCESS);
 }
 
+//timer used to terminate after the specified option(default 5)
 void setTimer(int seconds) {
 
 	struct sigaction act;
@@ -517,6 +540,7 @@ void setTimer(int seconds) {
 
 }
 
+//kills remaining blocked processes spawned after 90
 void cleanup() {
 	int i;
 	for(i = 0; i < MAX_USER_PROCESS; i++) {
@@ -527,6 +551,7 @@ void cleanup() {
 
 }
 
+//usage menu
 void usage() {
 	printf("======================================================================\n");
         printf("\t\t\t\tUSAGE\n");
